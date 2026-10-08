@@ -40,6 +40,23 @@ Practice opponents, when enabled, are simulated records for gameplay and do not 
 
 Authorized admins can manage player records, update names and scores, remove or restore users, and change sponsor channels
 
+## Backend implementation
+
+- Python backend using the standard library `ThreadingHTTPServer` and JSON API handlers
+- Telegram Mini App identity checked by validating signed `initData` with HMAC SHA-256 and its authentication timestamp
+- Admin endpoints and restricted bot commands authorized against configured Telegram user IDs
+- Telegram webhook requests checked with a configured secret token using constant time comparison
+- Webhook delivery used when a public URL is configured, with long polling as the fallback
+- Per-user and per-endpoint token bucket rate limits, plus throttling for group keyword launches
+- Game sessions use server-issued nonces and score submissions are checked server side to limit forged or replayed results
+- Player state kept in memory and saved to versioned JSON files, with locks protecting concurrent reads and mutations
+- A background writer coalesces updates and persists them through temporary files, file sync, and atomic replacement
+- Timestamped backup files provide recovery when the active state file cannot be read
+- Admin and gameplay events are recorded in a separate append only JSON Lines audit log
+- Telegram Bot API requests reuse pooled HTTP connections
+- Protected deployments can serve encrypted game and interface bundles with their key supplied through the bootstrap API
+- A health endpoint reports service and game window status
+
 ## Repository contents
 
 This public repository contains this README only
