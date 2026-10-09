@@ -17,6 +17,9 @@ Carina is a karate themed Telegram mini app for friendly play, score tracking, a
 - Opens the game inside Telegram from the bot
 - Runs a compact karate game in the browser using WebAssembly
 - Tracks player profiles, scores, attempts, and daily progress
+- Shares live score progress in Telegram groups while a game is running
+- Replays game actions on the server to calculate the recorded score
+- Detects suspiciously fast or unusually regular tap timing
 - Shows player rankings and rival information
 - Provides sponsor offers and lets players claim available sponsor rewards
 - Supports referral reward claims
@@ -40,22 +43,30 @@ Practice opponents, when enabled, are simulated records for gameplay and do not 
 
 Authorized admins can manage player records, update names and scores, remove or restore users, and change sponsor channels
 
-## Backend implementation
+## Backend techniques in the carina-fast source
 
-- Python backend using the standard library `ThreadingHTTPServer` and JSON API handlers
-- Telegram Mini App identity checked by validating signed `initData` with HMAC SHA-256 and its authentication timestamp
-- Admin endpoints and restricted bot commands authorized against configured Telegram user IDs
-- Telegram webhook requests checked with a configured secret token using constant time comparison
-- Webhook delivery used when a public URL is configured, with long polling as the fallback
-- Per-user and per-endpoint token bucket rate limits, plus throttling for group keyword launches
-- Game sessions use server-issued nonces and score submissions are checked server side to limit forged or replayed results
-- Player state kept in memory and saved to versioned JSON files, with locks protecting concurrent reads and mutations
-- A background writer coalesces updates and persists them through temporary files, file sync, and atomic replacement
-- Timestamped backup files provide recovery when the active state file cannot be read
-- Admin and gameplay events are recorded in a separate append only JSON Lines audit log
-- Telegram Bot API requests reuse pooled HTTP connections
-- Protected deployments can serve encrypted game and interface bundles with their key supplied through the bootstrap API
-- A health endpoint reports service and game window status
+- Python 3 backend built with the standard library `ThreadingHTTPServer` and JSON API handlers, with no third party Python runtime dependencies
+- Go 1.24 game engine compiled for browser WebAssembly and gzip compressed, with matching Python replay simulation for authoritative score calculation
+- Telegram Mini App `initData` signature verified with HMAC SHA-256 and a freshness check on its authentication timestamp
+- Game sessions use HMAC signed tokens containing the player ID, issue time, random nonce, and random engine seed, and expire after 20 minutes
+- Constant time signature comparison and one use session nonces help reject forged and replayed score submissions
+- The server replays each game from its seed, validates action order and timing, and calculates the score instead of trusting a browser supplied total
+- Statistical tap rate and timing regularity checks flag or block suspicious runs, with optional strike based automatic bans
+- Admin API calls require the configured admin secret, while restricted group commands check configured Telegram admin IDs
+- Telegram webhook calls require a secret header checked with constant time comparison, with long polling used when no public URL is configured
+- JSON request bodies are size limited and checked for valid object structure
+- Token bucket limits apply by IP address, player, and API route, with additional cooldowns for group launches and Telegram message edits
+- The threaded HTTP server uses bounded worker pools for Telegram updates and live group score updates
+- Live game progress is kept briefly in memory by session nonce, protected by a lock, and sent to group messages asynchronously
+- Telegram Bot API calls reuse per thread HTTPS keep alive connections and retry once after a stale connection
+- Player state is held in memory and persisted to versioned JSON files with locks, coalesced background writes, file sync, and atomic replacement
+- A backup copy allows recovery if the active JSON file cannot be read, while admin and gameplay events go to a separate append only JSON Lines audit log
+- Static file paths are URL decoded and resolved under the public asset directory, dot paths are rejected, and protected mode blocks the plaintext game files
+- Static responses use gzip compression, ETags, conditional cache responses, a content security policy, `nosniff`, and a no referrer policy
+- JSON request bodies are capped at 2 MB, malformed or non object payloads are rejected, and error responses avoid returning internal exception details
+- The build tool protects game and interface bundles with AES 256 GCM, fresh random nonces, and asset names as authenticated data, then serves the key only to verified Telegram users through the boot API
+- Docker runs the Python service as a non root user, keeps data in a persistent volume, exposes a health check, and flushes state on graceful shutdown
+- Go engine tests, Python unit tests, replay checks, and WebAssembly synchronization tests are included in the source archive
 
 ## Repository contents
 
